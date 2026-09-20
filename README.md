@@ -1,656 +1,270 @@
-\# CompanyMng
+# CompanyMng
 
+Multi-tenant project management REST API built with ASP.NET Core, PostgreSQL, JWT authentication, Docker, and automated integration tests.
 
+Companies register with an admin account, invite users, and manage projects, members, tasks, comments, and status history. Tenant data is isolated by `CompanyId` taken from the authenticated JWT, not from the client request body.
 
-CompanyMng is a multi-tenant project and task management REST API built with ASP.NET Core.
+## Key Features
 
+- Multi-tenant architecture (user belongs to one company)
+- JWT access tokens and hashed refresh tokens
+- Refresh token rotation and revocation on reuse and re-login
+- ASP.NET Core Identity with Admin and User roles
+- Company-level data isolation on projects, tasks, members, and comments
+- Project create / update / delete (Admin)
+- Project member add / remove (Admin)
+- Task create / update / assign / delete (Admin)
+- Task assignment limited to project members
+- Task status updates by Admin or the assigned user
+- Task history / audit trail
+- Comments with owner-or-Admin delete
+- Task list pagination, filtering, and title search
+- FluentValidation on request DTOs
+- Global exception handling with ProblemDetails
+- PostgreSQL (Neon-compatible)
+- Docker image
+- xUnit integration tests via `WebApplicationFactory`
+- GitHub Actions CI (restore, build, test)
 
+## Tech Stack
 
-The application allows companies to manage users, projects, project members, tasks, comments, and task workflows while keeping each company's data isolated.
+**Backend**
+- .NET 9
+- ASP.NET Core Web API
+- Entity Framework Core
+- ASP.NET Core Identity
 
+**Database**
+- PostgreSQL
+- Neon
 
+**Security**
+- JWT Bearer authentication
+- Refresh token hashing and rotation
+- Role-based authorization
+- Multi-tenant isolation via JWT `CompanyId`
 
-\## Features
+**Testing / DevOps**
+- xUnit
+- `WebApplicationFactory<Program>`
+- SQLite in-memory integration tests
+- Docker
+- GitHub Actions
 
-
-
-\- JWT authentication and refresh token rotation
-
-\- ASP.NET Core Identity
-
-\- Role-based authorization (Admin / User)
-
-\- Multi-tenant company data isolation
-
-\- Project management
-
-\- Project member management
-
-\- Task creation and assignment
-
-\- Task status workflow
-
-\- Task status history / audit trail
-
-\- Task comments
-
-\- Task filtering and pagination
-
-\- FluentValidation
-
-\- Global exception handling with Problem Details
-
-\- PostgreSQL database
-
-\- Integration tests
-
-\- Docker support
-
-\- GitHub Actions CI
-
-
-
-\## Tech Stack
-
-
-
-\- ASP.NET Core Web API (.NET 9)
-
-\- Entity Framework Core
-
-\- PostgreSQL
-
-\- Neon PostgreSQL
-
-\- ASP.NET Core Identity
-
-\- JWT Bearer Authentication
-
-\- FluentValidation
-
-\- xUnit
-
-\- SQLite In-Memory (Integration Tests)
-
-\- Docker
-
-\- GitHub Actions
-
-\- Swagger / OpenAPI
-
-
-
-\## Architecture
-
-
-
-Each user belongs to a company.
-
-
-
-Company data is isolated using the `CompanyId` claim contained in the authenticated user's JWT.
-
-
-
-Resources such as projects, tasks, project members, and comments are validated against the authenticated user's company to prevent cross-tenant access.
-
-
-
-Example:
-
-
+## Architecture / Multi-Tenancy
 
 ```text
-
-Company A
-
-&#x20;├── Users
-
-&#x20;├── Projects
-
-&#x20;│    ├── Members
-
-&#x20;│    └── Tasks
-
-&#x20;│         ├── Comments
-
-&#x20;│         └── Task History
-
-
-
-Company B
-
-&#x20;├── Users
-
-&#x20;└── Projects
-
+User ──► Company
+              │
+              └── Projects
+                    ├── Members
+                    └── Tasks
+                          ├── Comments
+                          └── TaskHistory
 ```
 
+`CompanyId` is not taken from the client. After login, it is issued as a JWT claim and used on resource queries.
 
+Cross-tenant reads and writes are rejected with **404** so another company's data is not confirmed or returned.
 
-A user from Company B cannot access resources belonging to Company A.
-
-
-
-\## Authentication
-
-
-
-The API uses JWT access tokens together with refresh tokens.
-
-
-
-Authentication flow:
-
-
+## Authentication Flow
 
 ```text
-
 Register / Login
-
-&#x20;      ↓
-
+        ↓
 Access Token + Refresh Token
-
-&#x20;      ↓
-
-Authenticated API Requests
-
-&#x20;      ↓
-
-Access Token expires
-
-&#x20;      ↓
-
-Refresh Token
-
-&#x20;      ↓
-
-New Access Token + New Refresh Token
-
+        ↓
+Authenticated requests
+        ↓
+POST /api/Auth/refresh
+        ↓
+Old refresh token revoked
+        ↓
+New access token + new refresh token
 ```
 
-
-
-Refresh tokens are stored as hashes in the database.
-
-
-
-Refresh token rotation is implemented, meaning a used refresh token is revoked when a new token is generated.
-
-
-
-Logging in again also revokes previous active refresh tokens for that user.
-
-
-
-\## Authorization
-
-
-
-The application contains two roles:
-
-
-
-\### Admin
-
-
-
-Admins can:
-
-
-
-\- Create and manage projects
-
-\- Create users within their company
-
-\- Manage project members
-
-\- Create, update, assign, and delete tasks
-
-\- Manage task workflows
-
-
-
-\### User
-
-
-
-Users can:
-
-
-
-\- Access authorized company resources
-
-\- Update tasks assigned to them
-
-\- Create comments
-
-\- Manage their own comments
-
-
-
-Task status updates can be performed by the assigned user or an Admin.
-
-
-
-\## Task Management
-
-
-
-Tasks support:
-
-
-
-\- Assignment to project members
-
-\- Priority levels
-
-\- Status workflow
-
-\- Due dates
-
-\- Filtering
-
-\- Search
-
-\- Pagination
-
-\- Status history
-
-
-
-Task assignment is restricted to users who are members of the corresponding project.
-
-
-
-\## Multi-Tenant Security
-
-
-
-Tenant isolation is enforced on the backend.
-
-
-
-The API does not trust `CompanyId` values supplied by clients. Instead, CompanyId is retrieved from the authenticated JWT.
-
-
-
-Cross-company resource requests return a safe response without exposing another company's data.
-
-
-
-Integration tests verify this behavior.
-
-
-
-\## Integration Tests
-
-
-
-The project contains an integration test project:
-
-
-
-```text
-
-CompanyMng.IntegrationTests
-
-```
-
-
-
-Tests use:
-
-
-
-\- xUnit
-
-\- `WebApplicationFactory<Program>`
-
-\- SQLite in-memory database
-
-\- Real HTTP requests against the API
-
-
-
-Current integration scenarios include:
-
-
-
-\- Register and login
-
-\- Admin authorization
-
-\- Project creation
-
-\- Project membership
-
-\- Task assignment
-
-\- Task status authorization
-
-\- Task history
-
-\- Comment authorization
-
-\- Cross-tenant isolation
-
-\- Refresh token rotation
-
-\- Previous refresh token revocation
-
-
-
-Run the tests with:
-
-
+Refresh tokens are stored as hashes, not plaintext. A second login revokes previously active refresh tokens for that user. Logout revokes the presented refresh token.
+
+## Authorization
+
+Roles: **Admin** (created on register) and **User** (created by an Admin in the same company).
+
+| Action | Admin | User |
+|---|---|---|
+| Create company users | Yes | No |
+| Create / update / delete projects | Yes | No |
+| Add / remove project members | Yes | No |
+| Create / update / assign / delete tasks | Yes | No |
+| List tasks for a project | Yes | No |
+| Get a task by id (same company) | Yes | Yes |
+| Change task status | Yes | Only if assigned |
+| Create / list comments | Yes | Yes |
+| Delete a comment | Same-company comments | Own comments only |
+
+Project member listing is available to authenticated users in the same company. It is not a separate membership-only ACL.
+
+## API Modules
+
+Base path: `/api/{controller}`
+
+| Method | Endpoint | Description | Authorization |
+|---|---|---|---|
+| POST | `/api/Auth/register` | Create company + first Admin | Anonymous |
+| POST | `/api/Auth/login` | Issue access and refresh tokens | Anonymous |
+| POST | `/api/Auth/refresh` | Rotate refresh token | Anonymous |
+| POST | `/api/Auth/logout` | Revoke refresh token | Anonymous |
+| POST | `/api/Auth/CreateUser` | Create a User in the current company | Admin |
+| POST | `/api/Project/create` | Create project | Admin |
+| GET | `/api/Project` | List projects | Authenticated |
+| GET | `/api/Project/{id}` | Get project | Authenticated |
+| PUT / DELETE | `/api/Project/{id}` | Update / delete project | Admin |
+| POST | `/api/ProjectMember/{projectId}` | Add member | Admin |
+| GET | `/api/ProjectMember/{projectId}` | List members | Authenticated |
+| DELETE | `/api/ProjectMember/{projectId}/{userId}` | Remove member | Admin |
+| POST | `/api/Task/{projectId}` | Create task | Admin |
+| GET | `/api/Task/project/{projectId}` | List tasks (filter / page / search) | Admin |
+| GET | `/api/Task/{id}` | Get task | Authenticated |
+| PUT | `/api/Task/{taskId}` | Update task | Admin |
+| PATCH | `/api/Task/{taskId}/assign` | Assign task | Admin |
+| PATCH | `/api/Task/{taskId}/status` | Change status | Admin or assignee |
+| DELETE | `/api/Task/{taskId}` | Delete task | Admin |
+| GET | `/api/Task/{taskId}/history` | Status history | Authenticated |
+| POST / GET | `/api/Comment/{taskId}` | Create / list comments | Authenticated |
+| DELETE | `/api/Comment/{commentId}` | Delete comment | Owner or Admin |
+
+Swagger UI is enabled only when `ASPNETCORE_ENVIRONMENT=Development`.
+
+## Integration Tests
+
+`CompanyMng.IntegrationTests` runs real HTTP requests against the API using xUnit, `WebApplicationFactory<Program>`, and an isolated SQLite in-memory database. Production credentials are not used.
+
+The suite includes **9 tests** covering:
+
+- Register and login
+- Admin-only project and task creation
+- Project membership and duplicate-member rejection
+- Task assignment to members only
+- Task status authorization (assignee vs other user vs Admin)
+- Task history
+- Comment create / list / owner delete / Admin delete
+- Cross-tenant isolation (404, no leaked payload)
+- Refresh token rotation and re-login revocation
 
 ```bash
-
 dotnet test
-
 ```
 
-
-
-\## Docker
-
-
-
-Build the image:
-
-
+## Docker
 
 ```bash
-
 docker build -t companymng-api .
-
 ```
 
-
-
-Create a local `.env` file:
-
-
+Create a local `.env` file (do not commit it):
 
 ```env
-
-ConnectionStrings\_\_DefaultConnection=YOUR\_CONNECTION\_STRING
-
-Jwt\_\_Key=YOUR\_JWT\_SECRET\_KEY
-
-Jwt\_\_Issuer=CompanyMngApi
-
-Jwt\_\_Audience=CompanyMngClient
-
-Jwt\_\_AccessTokenMinutes=30
-
+ConnectionStrings__DefaultConnection=YOUR_CONNECTION_STRING
+Jwt__Key=YOUR_JWT_SECRET_KEY
+Jwt__Issuer=CompanyMngApi
+Jwt__Audience=CompanyMngClient
+Jwt__AccessTokenMinutes=30
 ```
-
-
-
-> Do not commit the `.env` file. It is excluded from Git.
-
-
-
-Run the container:
-
-
 
 ```bash
-
-docker run --name companymng-api \\
-
-&#x20; -p 8080:8080 \\
-
-&#x20; --env-file .env \\
-
-&#x20; companymng-api
-
+docker run --name companymng-api \
+  -p 8080:8080 \
+  --env-file .env \
+  companymng-api
 ```
 
-
-
-For local Swagger testing:
-
-
+The published image listens on port **8080**. Swagger is off in Production. For local Swagger:
 
 ```bash
-
-docker run --name companymng-api \\
-
-&#x20; -p 8080:8080 \\
-
-&#x20; --env-file .env \\
-
-&#x20; -e ASPNETCORE\_ENVIRONMENT=Development \\
-
-&#x20; companymng-api
-
+docker run --name companymng-api \
+  -p 8080:8080 \
+  --env-file .env \
+  -e ASPNETCORE_ENVIRONMENT=Development \
+  companymng-api
 ```
 
+Then open `http://localhost:8080/swagger`.
 
+## Configuration
 
-Swagger:
+Local development: .NET User Secrets.
 
+Docker / production: environment variables.
 
-
-```text
-
-http://localhost:8080/swagger
-
-```
-
-
-
-\## Configuration
-
-
-
-Sensitive configuration values are not stored in the repository.
-
-
-
-For local development, use .NET User Secrets.
-
-
-
-Example:
-
-
+Connection strings and JWT signing keys are not stored in this repository.
 
 ```bash
-
-dotnet user-secrets set "ConnectionStrings:DefaultConnection" "YOUR\_CONNECTION\_STRING"
-
-dotnet user-secrets set "Jwt:Key" "YOUR\_JWT\_SECRET\_KEY"
-
+dotnet user-secrets set "ConnectionStrings:DefaultConnection" "YOUR_CONNECTION_STRING" --project CompanyMng
+dotnet user-secrets set "Jwt:Key" "YOUR_JWT_SECRET_KEY" --project CompanyMng
 ```
 
+Issuer, audience, and access-token lifetime can stay in `appsettings.json`; only secrets belong in User Secrets or the environment.
 
+## CI
 
-For containers and deployment environments, use environment variables.
+`.github/workflows/ci.yml` runs on **push** and **pull request** to `main`:
 
+1. Checkout
+2. Setup .NET 9
+3. Restore
+4. Build (Release)
+5. Test (Release)
 
-
-\## CI
-
-
-
-GitHub Actions automatically runs the following pipeline on pushes and pull requests to `main`:
-
-
-
-```text
-
-Checkout
-
-&#x20;  ↓
-
-Setup .NET 9
-
-&#x20;  ↓
-
-Restore
-
-&#x20;  ↓
-
-Build
-
-&#x20;  ↓
-
-Integration Tests
-
-```
-
-
-
-The workflow is located at:
-
-
-
-```text
-
-.github/workflows/ci.yml
-
-```
-
-
-
-\## Running Locally
-
-
-
-Clone the repository and restore dependencies:
-
-
+## Getting Started
 
 ```bash
-
+git clone <repository-url>
+cd CompanyMng
 dotnet restore
-
 ```
 
-
-
-Configure the required secrets:
-
-
+Configure PostgreSQL and JWT secrets (see Configuration), then:
 
 ```bash
-
-dotnet user-secrets set "ConnectionStrings:DefaultConnection" "YOUR\_CONNECTION\_STRING" --project CompanyMng
-
-dotnet user-secrets set "Jwt:Key" "YOUR\_JWT\_SECRET\_KEY" --project CompanyMng
-
-```
-
-
-
-Run the API:
-
-
-
-```bash
-
 dotnet run --project CompanyMng
-
+dotnet test
 ```
 
+In Development, use the Swagger URL printed by `dotnet run`.
 
-
-Then open the Swagger URL shown in the terminal.
-
-
-
-\## Project Structure
-
-
+## Project Structure
 
 ```text
-
-CompanyMng/
-
-├── Controllers/
-
-├── Data/
-
-├── Dto/
-
-├── Entities/
-
-├── Enum/
-
-├── Middleware/
-
-├── Migrations/
-
-├── Services/
-
-└── Validators/
-
-
-
-CompanyMng.IntegrationTests/
-
-├── ApiClient.cs
-
-├── AuthFlowTests.cs
-
-├── ProjectTaskCommentTests.cs
-
-└── TenantIsolationTests.cs
-
-
-
-.github/
-
-└── workflows/
-
-&#x20;   └── ci.yml
-
-
-
-Dockerfile
-
 CompanyMng.sln
-
+Dockerfile
+.github/workflows/ci.yml
+CompanyMng/
+├── Controllers/
+├── Data/
+├── Dto/
+├── Entities/
+├── Enum/
+├── Middleware/
+├── Migrations/
+├── Services/
+├── Validators/
+└── Program.cs
+CompanyMng.IntegrationTests/
+├── CustomWebApplicationFactory.cs
+├── ApiClient.cs
+├── AuthFlowTests.cs
+├── ProjectTaskCommentTests.cs
+└── TenantIsolationTests.cs
 ```
 
+## Security Highlights
 
+- Identity password hashing
+- JWT issuer, audience, lifetime, and signing-key validation (`ClockSkew = TimeSpan.Zero`)
+- Role-based authorization on mutating project/task/member endpoints
+- Tenant isolation from JWT `CompanyId`
+- Task assignment only to project members
+- Refresh tokens stored as hashes, rotated, and revoked
+- DTO + FluentValidation (no entity mass assignment of tenant/role fields)
+- Global exception middleware with generic ProblemDetails (no stack traces to clients)
 
-\## Security Highlights
-
-
-
-\- Password hashing through ASP.NET Core Identity
-
-\- JWT signature and lifetime validation
-
-\- Role-based authorization
-
-\- Tenant-level data isolation
-
-\- Server-side ownership and membership validation
-
-\- Refresh tokens stored as hashes
-
-\- Refresh token rotation and revocation
-
-\- DTO-based input models
-
-\- FluentValidation
-
-\- Global exception handling
-
-\- Secrets excluded from source control
-
-
-
-\## License
-
-
-
-This project was developed as a backend portfolio project.
-
+This repository is a backend portfolio project.
