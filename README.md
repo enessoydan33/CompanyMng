@@ -1,5 +1,7 @@
 # CompanyMng
 
+[![CI](https://github.com/enessoydan33/CompanyMng/actions/workflows/ci.yml/badge.svg)](https://github.com/enessoydan33/CompanyMng/actions/workflows/ci.yml)
+
 Multi-tenant project management REST API built with ASP.NET Core, PostgreSQL, JWT authentication, Docker, and automated integration tests.
 
 Companies register with an admin account, invite users, and manage projects, members, tasks, comments, and status history. Tenant data is isolated by `CompanyId` taken from the authenticated JWT, not from the client request body.
@@ -8,7 +10,7 @@ Companies register with an admin account, invite users, and manage projects, mem
 
 - Multi-tenant architecture (user belongs to one company)
 - JWT access tokens and hashed refresh tokens
-- Refresh token rotation and revocation on reuse and re-login
+- Refresh token rotation; reused refresh tokens are rejected
 - ASP.NET Core Identity with Admin and User roles
 - Company-level data isolation on projects, tasks, members, and comments
 - Project create / update / delete (Admin)
@@ -25,6 +27,34 @@ Companies register with an admin account, invite users, and manage projects, mem
 - Docker image
 - xUnit integration tests via `WebApplicationFactory`
 - GitHub Actions CI (restore, build, test)
+
+## Screenshots
+
+Captured from a local run against a disposable PostgreSQL container with fictional demo data (see [Run Locally Without a Production Database](#run-locally-without-a-production-database)).
+
+### Swagger overview
+
+![Swagger UI listing the Auth, Comment, Project, ProjectMember, and Task endpoints](docs/screenshots/01-swagger-overview.png)
+
+All API modules in Swagger UI, with JWT Bearer authorization configured for testing protected endpoints. Access rules per endpoint are listed under [API Modules](#api-modules).
+
+### Project list response
+
+![GET /api/Project returning 200 OK with two demo projects](docs/screenshots/02-project-api-response.png)
+
+`GET /api/Project` returns **200 OK** with the projects of the caller's company only. The company is resolved from the JWT `CompanyId` claim.
+
+### Tenant isolation
+
+![GET /api/Project/1 returning 404 Not Found](docs/screenshots/03-tenant-isolation.png)
+
+An Admin of a second company requests project `1`, which belongs to another company. The API returns **404 Not Found** (the message reads "Project not found" in Turkish), so the other tenant's data is neither returned nor confirmed to exist.
+
+### Integration tests
+
+![dotnet test output listing all 9 integration tests as passed](docs/screenshots/04-integration-tests.png)
+
+`dotnet test` output: all **9 of 9** integration tests pass (0 failed, 0 skipped) on an isolated SQLite in-memory database, covering auth and refresh tokens, roles, task assignment, comments, and tenant isolation.
 
 ## Tech Stack
 
@@ -148,7 +178,7 @@ The suite includes **9 tests** covering:
 - Task history
 - Comment create / list / owner delete / Admin delete
 - Cross-tenant isolation (404, no leaked payload)
-- Refresh token rotation and re-login revocation
+- Refresh token rotation, reused-token rejection, and re-login revocation
 
 ```bash
 dotnet test
@@ -217,7 +247,7 @@ Issuer, audience, and access-token lifetime can stay in `appsettings.json`; only
 ## Getting Started
 
 ```bash
-git clone <repository-url>
+git clone https://github.com/enessoydan33/CompanyMng.git
 cd CompanyMng
 dotnet restore
 ```
@@ -230,6 +260,56 @@ dotnet test
 ```
 
 In Development, use the Swagger URL printed by `dotnet run`.
+
+## Run Locally Without a Production Database
+
+Use a disposable local PostgreSQL container so that migrations, seeded roles, and test users never reach a hosted or production database. The credentials below are throwaway local values, not real secrets.
+
+**1. Start a local PostgreSQL container** (single line, works in PowerShell and bash; port 5433 avoids clashing with an existing local PostgreSQL):
+
+```bash
+docker run --name companymng-db -e POSTGRES_USER=companymng -e POSTGRES_PASSWORD=localdev -e POSTGRES_DB=companymng -p 5433:5432 -d postgres:16
+```
+
+**2. Point the API at the container** for the current terminal session only. Environment variables override User Secrets, so a hosted connection string stored there is not used.
+
+PowerShell:
+
+```powershell
+$env:ConnectionStrings__DefaultConnection = "Host=localhost;Port=5433;Database=companymng;Username=companymng;Password=localdev"
+$env:Jwt__Key = "local-dev-only-signing-key-change-me-0123456789"
+```
+
+bash:
+
+```bash
+export ConnectionStrings__DefaultConnection="Host=localhost;Port=5433;Database=companymng;Username=companymng;Password=localdev"
+export Jwt__Key="local-dev-only-signing-key-change-me-0123456789"
+```
+
+**3. Safety check before touching any database.** Confirm the container is running and that EF Core resolves the local connection:
+
+```bash
+docker ps --filter name=companymng-db
+dotnet ef dbcontext info --project CompanyMng
+```
+
+The output must show `Data source: tcp://localhost:5433` and `Database name: companymng`. If it shows any other host (for example a hosted/cloud PostgreSQL address), stop and set the environment variables again. They apply only to the terminal where they were set, so repeat step 2 in every new terminal.
+
+**4. Apply migrations and start the API** (requires the `dotnet-ef` tool):
+
+```bash
+dotnet ef database update --project CompanyMng
+dotnet run --project CompanyMng --launch-profile http
+```
+
+Swagger UI is then available at `http://localhost:5243/swagger` (the `http` profile in `launchSettings.json`).
+
+**5. Clean up** when you are done:
+
+```bash
+docker rm -f companymng-db
+```
 
 ## Project Structure
 
